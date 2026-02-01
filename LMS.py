@@ -1,5 +1,12 @@
 import requests
 import re
+import time
+
+# =====================
+# SIMPLE TTL CACHE
+# =====================
+_CACHE = {}
+_CACHE_TTL = 300  # 5분 (초)
 
 # =====================
 # API URLs
@@ -11,10 +18,6 @@ SCHEDULE_URL = "https://b2c-api.modetour.com/Package/GetScheduleTabData?groupNum
 # VISA KEYWORDS (OR)
 # =====================
 VISA_PATTERN = re.compile("출입국|서류|비자|입국|신고서|작성|온라인|안내")
-
-# ortherActions 스캔 최대 개수
-MAX_SCAN_ACTIONS = 5
-
 
 # =====================
 # COMMON
@@ -32,7 +35,6 @@ def clean_text(value) -> str:
     text = re.sub(r"<[^>]+>", " ", text)   # HTML 제거
     text = re.sub(r"\s+", " ", text)       # 공백 정리
     return text.strip()
-
 
 # =====================
 # VISA (Schedule API)
@@ -56,10 +58,9 @@ def extract_visa_from_schedule(schedule_json: dict) -> dict | None:
     return None
 
 # =====================
-# MAIN COMBINED LOGIC
+# REAL LOGIC (NO CACHE)
 # =====================
-def fetch_combined_product_info(input_id: int) -> dict:
-    # API 호출 (동일 ID)
+def _fetch_combined_product_info(input_id: int) -> dict:
     product_json = fetch_json(f"{PRODUCT_URL}{input_id}")
     schedule_json = fetch_json(f"{SCHEDULE_URL}{input_id}")
 
@@ -99,17 +100,25 @@ def fetch_combined_product_info(input_id: int) -> dict:
             },
         },
 
-        # 6) 비자정보 (일정 API - 독립)
+        # 6) 비자정보 (일정 API 기준)
         "visa_from_schedule": extract_visa_from_schedule(schedule_json),
     }
 
     return result
 
+# =====================
+# CACHE WRAPPER (PUBLIC)
+# =====================
+def fetch_combined_product_info(input_id: int) -> dict:
+    now = time.time()
 
-# =====================
-# ENTRY
-# =====================
-# if __name__ == "__main__":
-#     input_id = int(input("productId / groupNumber 입력: "))
-#     data = fetch_combined_product_info(input_id)
-#     print(data)
+    # 캐시 히트
+    if input_id in _CACHE:
+        cached_data, cached_time = _CACHE[input_id]
+        if now - cached_time < _CACHE_TTL:
+            return cached_data
+
+    # 캐시 미스
+    data = _fetch_combined_product_info(input_id)
+    _CACHE[input_id] = (data, now)
+    return data
