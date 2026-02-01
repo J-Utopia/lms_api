@@ -42,20 +42,34 @@ def clean_text(value) -> str:
 def extract_visa_from_schedule(schedule_json: dict) -> dict | None:
     schedule_items = schedule_json.get("result", {}).get("scheduleItemList", [])
 
-    for day_idx, day in enumerate(schedule_items):
-        actions = day.get("ortherActions") or day.get("otherActions") or []
-        for action in actions:
-            summary = clean_text(action.get("summaryDes"))
-            detail = clean_text(action.get("detailDes"))
-            merged = f"{summary} {detail}"
+    if not schedule_items:
+        return None
 
-            if merged and VISA_PATTERN.search(merged):
-                return {
-                    "dayIndex": day_idx + 1,
-                    "summaryDes": summary,
-                    "detailDes": detail
-                }
+    day = schedule_items[0]  # ✅ 무조건 1일차
+
+    actions = day.get("ortherActions") or day.get("otherActions") or []
+
+    for action in actions:
+        texts = [
+            clean_text(action.get("summaryDes")),
+            clean_text(action.get("detailDes")),
+            clean_text(action.get("itiSummaryDes")),
+            clean_text(action.get("itiDetailDes")),
+        ]
+
+        merged = " ".join(t for t in texts if t)
+
+        if merged and VISA_PATTERN.search(merged):
+            return {
+                "dayIndex": 1,
+                "summaryDes": clean_text(action.get("summaryDes")),
+                "detailDes": clean_text(action.get("detailDes")),
+                "itiSummaryDes": clean_text(action.get("itiSummaryDes")),
+                "itiDetailDes": clean_text(action.get("itiDetailDes")),
+            }
+
     return None
+
 
 # =====================
 # REAL LOGIC (NO CACHE)
@@ -98,6 +112,12 @@ def _fetch_combined_product_info(input_id: int) -> dict:
                 "localDepartureTime": content.get("localDepartureTime"),
                 "arrivalTime": content.get("arrivalTime"),
             },
+        },
+
+        # 5) 출발일 / 도착일 (추가)
+        "travelDate": {
+            "departureDate": content.get("departureDate"),
+            "arrivalDate": content.get("arrivalDate"),
         },
 
         # 6) 비자정보 (일정 API 기준)
